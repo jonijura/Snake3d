@@ -1,0 +1,104 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+Texture2D<float4> Source;
+RWTexture2D<float4> Target;
+
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+
+struct Shape {
+    float3 position;
+    float3 colour;
+    float radius;
+};
+
+StructuredBuffer<Shape> shapes;
+int numShapes;
+
+static const float maxDst = 8;
+static const float minDst = 0.11;
+static const float epsilon = 0.001f;
+static const float borderSize = 10;
+
+struct Ray {
+    float3 origin;
+    float3 direction;
+};
+
+Ray CreateRay(float3 origin, float3 direction) {
+    Ray ray;
+    ray.origin = origin;
+    ray.direction = direction;
+    return ray;
+}
+
+Ray CreateCameraRay(float2 uv) {
+    float3 origin = mul(_CameraToWorld, float4(0, 0, 0, 1)).xyz;
+    float3 direction = mul(_CameraInverseProjection, float4(uv, 0, 1)).xyz;
+    direction = mul(_CameraToWorld, float4(direction, 0)).xyz;
+    direction = normalize(direction);
+    return CreateRay(origin, direction);
+}
+
+float mod(float a) {
+    return a - floor(a);
+}
+
+float3 mod(float3 a) {
+    return float3(mod(a.x), mod(a.y), mod(a.z));
+}
+
+float3 dst(float3 a, float3 b) {
+    float dx = abs(mod(a.x) - mod(b.x));
+    dx = min(dx, 1 - dx);
+    float dy = abs(mod(a.y) - mod(b.y));
+    dy = min(dy, 1 - dy);
+    float dz = abs(mod(a.z) - mod(b.z));
+    dz = min(dz, 1 - dz);
+    return float3(dx, dy, dz);
+}
+
+float dstToCircle(float3 pos, float3 circMid, float radius) {
+    return length(dst(pos, circMid)) - radius;
+}
+
+float3 _Position;
+
+float2 dstToObjects(float3 pos) {
+    float2 ans = float2(maxDst,0);
+    for (int i = 0; i < numShapes; i++) {
+        Shape shape = shapes[i];
+        float dstToObj = dstToCircle(pos, shape.position, shape.radius);
+        if (dstToObj < ans.x) {
+            ans.x = dstToObj;
+            ans.y = i;
+        }
+    }
+    return ans;
+}
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    uint width, height;
+    Target.GetDimensions(width, height);
+    float rayDst = 0;
+    float3 pos = float3(0,0,0);
+    float3 lightDir = float3(0, -1, 0);
+    float2 uv = id.xy / float2(width, height) * 2 - 1;
+    Ray ray = CreateCameraRay(uv);
+    ray.origin = ray.origin + minDst.x * ray.direction;
+    while (rayDst < maxDst) {
+        float2 dstToObj = dstToObjects(ray.origin);
+        ray.origin = ray.origin + dstToObj.x * ray.direction;
+        rayDst += dstToObj.x;
+        if (dstToObj.x < epsilon){
+            float3 normal = -dst(shapes[dstToObj.y].position, ray.origin);
+            float lightingCoeff = max(0.2, dot(normal / length(normal), lightDir));
+            Target[id.xy] = float4(lightingCoeff * ((maxDst - rayDst) / maxDst) * shapes[dstToObj.y].colour,0);
+            return;
+        }
+    }
+    Target[id.xy] = 0;
+}

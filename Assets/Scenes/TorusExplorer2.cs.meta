@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: 77f28e27820bb754fba7e8bc75ab160c
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - cam: {instanceID: 0}
+  - raymarcher: {fileID: 7200000, guid: c364318228266c448bb0132bae55e037, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
